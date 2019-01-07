@@ -1,398 +1,237 @@
-import time
-from cudatext import *
-import os
-import codecs
+﻿import os
 import re
+import json
 import cudatext as ct
-import cudatext_cmd
+import cudatext_cmd as ct_cmd
+from .autoitparser import ApiParser, Au3Parser
 
 
-def is_wordchar(s):
-
-    return s.isalnum() or s in '#@<_'
+def msg(s, level=0):
+    if level == 0:
+        print('cuda_autoit_intel:', s)
+    elif level == 1:
+        print('cuda_autoit_intel WARNING:', s)
+    elif level == 2:
+        print('cuda_autoit_intel ERROR:', s)
 
 
 class Command:
-
-    options_filename = os.path.join(app_path(APP_DIR_SETTINGS), 'cuda_autoit_helper.json')
-    options = {'autoit_dir': 'C:\\Programs\\AutoIt3'}
-    found_autoitdir = False
-    vars = []
-    functions = []
-    times = []
-    defs = []
-
+    filesettings = os.path.join(ct.app_path(ct.APP_DIR_SETTINGS),
+                                'cuda_autoit_helper.json')
 
     def __init__(self):
-        '''
-        load and parse acp file
-        '''
-        acpfile = os.path.join(os.path.dirname(__file__), 'AutoIt.acp')
+        with open(self.filesettings) as fs:
+            self.settings = json.load(fs)
+        Au3Parser.autoitpath = self.settings.get('autoit_dir')
 
-        if os.path.isfile(self.options_filename):
-            with open(self.options_filename) as fin:
-                self.options = json.load(fin)
+        self.api_file = os.path.join(os.path.dirname(__file__), 'au3.api')
+        self.api = ApiParser(self.api_file)
+        self.parsers = {}
+        self.definitions = {}
 
-        self.check_autoit_dir()
-
-        if os.path.isfile(acpfile):
-            with codecs.open(acpfile, 'r', encoding='utf-8', errors='ignore') as fin:
-                for line in fin:
-                    sx = line.split(' ', 1)
-                    if len(sx) == 1:
-                        continue
-                    s1 = sx[0]
-                    sx = sx[1].split('|', 1)
-                    s2 = sx[0]
-                    s3 = sx[1] if len(sx) > 1 else ''
-
-                    if s2.find('('):
-                        sx = s2.split('(', 1)
-                        s2 = sx[0]
-                        s3 = sx[1].strip('( )') if len(sx) > 1 else ''
-
-                    self.functions.append([s1, s2, s3])
-
-
-    def on_open(self, ed_self):
-        '''
-        parse file on open with included files
-        '''
-        self.parse_text(ed_self, 1)
-
-
-    def on_change_slow(self, ed_self):
-        '''
-        parse file for local changes
-        '''
-        self.parse_text(ed_self, 0)
-
-
-    def on_save(self, ed_self):
-        '''
-        parse file on save with included files
-        '''
-        self.parse_text(ed_self, 1)
-
-
-    def parse_text(self, ed_self, withincludes=0):
-        '''
-        get file content and call parser
-        '''
+    def parser(self, ed_self):
         file = ed_self.get_filename()
-        text = ed_self.get_text_all()
-        text = re.split('\r|\n', text)
-        self.find_keywords(text, file, False, withincludes)
+        current = self.parsers.setdefault(file, Au3Parser())
+        text = re.split('\r|\n', ed_self.get_text_all())
+        row = ct.ed.get_carets()[0][1]
+        current.parse_au3_file(text, file, row)
 
-
-    def find_keywords(self, text, file, isincluded=False, withincludes=0):
-        '''
-        parse text and update cache
-        '''
-        regvars = re.compile(r'\$(\w+)\s*(=|)', re.I)  # varname, maybe '=' -> gotodef
-        regcons = re.compile(r'Const\s+\$(\w+)\s*(=.*)', re.I)  # var, value - Global Const $COLOR_AQUA = 0x00FFFF
-        regfuns = re.compile(r'Func\s+(\w+)\s*\((.*?)\)', re.I)  # funcname, params
-        regincs = re.compile(r'#include\s*(<|")(.*?)[>|"]', re.I)  # [<|"], filename
-        iscomment = False
-
-        filepath = os.path.dirname(file)
-        line_nr = 0
-
-        for line in text:
-            line_nr += 1
-            ls = line.strip()
-
-            if ls.find(';') == 0:
-                continue
-            if ls.find('#cs') == 0 or ls.find('#comments-start') == 0:
-                iscomment = True
-            if ls.find('#ce') >= 0 or ls.find('#comments-end') >= 0:
-                iscomment = False
-            if iscomment is True:
-                continue
-
-            line = ' ' + line
-
-            # find variables, not in includes files, only constants
-            if not isincluded:
-                foundvars = regvars.findall(line)
-                for f in foundvars:
-                    fx = '$' + f[0].strip(' ,()[]')
-                    if fx != '$':
-                        if fx not in self.vars:
-                            self.vars.append(fx)
-                        if f[1] == '=':
-                            self.update_defs(fx, '', file, line_nr)
-
-            # find constants
-            foundcons = regcons.findall(line)
-            for f in foundcons:
-                fx = ''.join(['$', f[0].strip(), '|', f[1].strip()])
-                if fx not in self.vars:
-                    self.vars.append(fx)
-                self.update_defs('$' + f[0].strip(), '', file, line_nr)
-
-            # find functions
-            foundfuns = regfuns.findall(line)
-            for f in foundfuns:
-                fx = ['Function', f[0], f[1]]
-                if fx not in self.functions:
-                    self.functions.append(fx)
-                self.update_defs(f[0].strip(), '', file, line_nr)
-
-            if withincludes == 0:
-                continue
-
-            # scan included files too
-            foundincs = regincs.findall(line)
-            for f in foundincs:
-                if f[0] == '<':
-                    # AutoIt UDFs <filename>
-                    filei = os.path.join(self.options['autoit_dir'], 'Include', f[1])
-                else:
-                    # locale files "filename"
-                    filei = os.path.join(filepath, f[1])
-
-                if os.path.isfile(filei):
-                    for t in self.times:
-                        if t[0] == filei and os.path.getmtime(filei) == t[1]:
-                            # file not changed
-                            continue
-
-                    for t in self.times:
-                        if t[0] == filei:
-                            self.times.remove(t)
-
-                    self.times.append([filei, os.path.getmtime(filei)])
-                    self.update_defs(f[1], '', filei, 0)
-
-                    with codecs.open(filei, 'r', encoding='utf-8', errors='ignore') as text:
-                        self.find_keywords(text, filei, True)
-
-
-    def update_defs(self, x, y, file, line_nr):
-        '''
-        update cache, delete old, add new or changed entries
-        '''
-        for dx in self.defs:
-            if dx[0] == x and dx[1] == y:
-                self.defs[self.defs.index(dx)] = ''
-        self.defs = [z for z in self.defs if z != '']
-
-        self.defs.append([x, y, file, line_nr])
-
+        self.keywords = self.api.keywords + current.keywords
+        self.functions = self.api.functions + current.functions
+        self.definitions = current.definitions
 
     def on_goto_def(self, ed_self):
-        '''
-        go to definition call
-        '''
-        params = self.get_params()
-        if not params:
+        """go to definition call"""
+        cursor = self.get_cursor()
+        if not cursor:
             return
-
-        res = self.handle_goto_def(*params)
-        if res is None:
+        word, _ = self.get_word_under_cursor(*cursor)
+        df = self.definitions.get(word.lower())  # [file, line_number] and None
+        if df:
+            self.goto_file(*df)
             return True
-
-        self.goto_file(*res)
-        return True
-
-
-    def handle_goto_def(self, text, fn, row, col):
-        '''
-        go to definition function
-        '''
-        search = self.get_word_under_cursor(row, col)
-
-        l_dlg = ''
-        l_files = []
-        for f in self.defs:
-            if f[0].lower() == search:
-                if os.path.isfile(f[2]) and [f[2], f[3]] not in l_files:
-                    l_dlg += f[0] + ' - ' + f[1] + '\n'
-                    l_files.append([f[2], f[3]])
-
-        if len(l_files) == 1:
-            # 1 result
-            return (l_files[0][0], l_files[0][1], 0)
-        elif len(l_files) > 1:
-            # > 1 results
-            goto = dlg_menu(MENU_LIST, l_dlg)
-            return (l_files[goto][0], l_files[goto][1], 0)
         else:
-            # 0 results
-            msg_status('Goto - no definition found for : ' + search)
+            ct.msg_status('Goto - no definition found for : ' + word)
 
-        return
-
-
-    def get_word_under_cursor(self, row, col):
-        '''
-        get current word
-        '''
-        line = ed.get_text_line(row).lower().replace('\t', ' ')
-        line1 = ' ' + line[:col]
-        line2 = line[col:] + ' '
-
-        seps = ',:-!<>()[]{}\'"\t\n\r'
-        for sep in seps:
-            line1 = line1.replace(sep, ' ')
-            line2 = line2.replace(sep, ' ')
-
-        search = line1[line1.rfind(' ')+1:] + line2[:line2.find(' ')]
-        return search
-
-
-    def goto_file(self, filename, num_line, num_col=0):
-        '''
-        open definition file and mark line
-        '''
+    def goto_file(self, filename, row, col=0):
+        """open definition file and mark line"""
         if not os.path.isfile(filename):
             return
-
-        file_open(filename)
-        ed.set_prop(PROP_LINE_TOP, str(max(0, num_line - 5)))  # 5 = Offset
-        ed.set_caret(num_col, num_line - 1)
-        msg_status('Goto "%s", Line %d' % (filename, num_line))
-
+        ct.file_open(filename)
+        ct.ed.set_prop(ct.PROP_LINE_TOP, str(max(0, row - 5)))  # 5 = Offset
+        ct.ed.set_caret(col, row - 1)
+        ct.msg_status('Goto "%s", Line %d' % (filename, row))
 
     def on_func_hint(self, ed_self):
-        '''
-        show hint call
-        '''
-        params = self.get_params()
-        if not params:
+        """show hint call"""
+        cursor = self.get_cursor()
+        if not cursor:
             return
+        row, col = cursor
 
-        item = self.handle_func_hint(*params)
-        if item is None:
-            return
-        else:
-            return ' '+item
+        line = ct.ed.get_text_line(row).lower()
+        end = line.rfind('(', 0, row+1)
+        start = line.rfind(' ', 0, end)+1
+        s = line[start:end].strip('( )')
 
-
-    def handle_func_hint(self, text, fn, row, col):
-        '''
-        show hint function
-        '''
-        line = ed.get_text_line(row).lower()
-        search = line[:col].strip()
-        end = search.rfind('(')
-        start = search.rfind(' ', 0, end) + 1
-        search = search[start:end].strip('( )')
-
-        pars = ''
         for f in self.functions:
-            if f[1].lower() == search:
+            if f[1].lower() == s:
                 if f[2]:
-                    pars = '( ' + f[2] + ' )'
-
-        return pars
-
+                    return ' ( ' + f[2] + ' )'
 
     def on_complete(self, ed_self):
-        '''
-        autocompletion call
-        '''
-        params = self.get_params()
-        if not params:
+        """autocomplete call"""
+        self.parser(ed_self)
+        cursor = self.get_cursor()
+        if not cursor:
             return
+        src = self.get_word_under_cursor(*cursor)
+        if not src:
+            return
+        word, pos = src
+        source = word[:pos].lower()
 
-        text, fn, y0, x0 = params
-        line = ed.get_text_line(y0)
-        if not 0 < x0 <= len(line):
-            return True
-
-        x = x0
-        while x > 0 and is_wordchar(line[x-1]):
-            x -= 1
-        len1 = x0 - x
-
-        x = x0
-        while x < len(line) and is_wordchar(line[x]):
-            x += 1
-        len2 = x - x0
-
-        text = self.handle_autocomplete(*params)
-        if not text:
-            return True
-
-        ed.complete(text, len1, len2)
-        return True
-
-
-    def handle_autocomplete(self, text, fn, row, col):
-        '''
-        autocompletion function
-        '''
-        line = ed.get_text_line(row).lower()
-        search = line[:col]
-        for s in ',([&\t':
-            if s in search:
-                search = search.replace(s, ' ')
-        start = search.rfind(' ') + 1
-        search = search[start:]
-        text = ''
-
+        # create autocomplete list
+        complete_list = ''
         for f in self.functions:
-            if f[1].lower().find(search) == 0:
+            if f[1].lower().find(source) == 0:
                 pars = ''
                 if f[2]:
                     pars = ''.join(['(', f[2].strip(), ')'])
-                text += '|'.join([f[0].strip(), f[1].strip(), pars]) + '\n'
+                complete_list += '|'.join([f[0], f[1].strip(), pars]) + '\n'
+        for v in self.keywords:
+            if v[1].lower().find(source) == 0:
+                complete_list += '|'.join([v[0], v[1], ' \n'])
+        if not complete_list:
+            return True
 
-        for f in self.vars:
-            if f.lower().find(search) == 0:
-                text += '|'.join(['var', f.strip('$'), '\n'])
+        ct.ed.complete(complete_list, pos, len(word)-pos)
+        return True
 
-        return text
-
-
-    def get_params(self):
-        '''
-        get current cursor position
-        '''
-        fn = ed.get_filename()
-        carets = ed.get_carets()
-
+    def get_cursor(self):
+        """get current cursor position"""
+        carets = ct.ed.get_carets()
         if len(carets) != 1:
             return
-
         x0, y0, x1, y1 = carets[0]
-
-        if not 0 <= y0 < ed.get_line_count():
+        if not 0 <= y0 < ct.ed.get_line_count():
             return
-
-        line = ed.get_text_line(y0)
-
+        line = ct.ed.get_text_line(y0)
         if not 0 <= x0 <= len(line):
             return
+        return (y0, x0)
 
-        text = ed.get_text_all()
-        if not text:
+    def get_word_under_cursor(self, row, col, seps='.,:-!<>()[]{}\'"\t\n\r'):
+        """get current word under cursor position"""
+        line = ct.ed.get_text_line(row)
+        if not 0 <= col <= len(line):
             return
+        for sep in seps:
+            if sep in line:
+                line = line.replace(sep, ' ')
+        s = ''.join([' ', line, ' '])
+        start = s.rfind(' ', 0, col+1)
+        end = s.find(' ', col+1)-1
+        word = line[start:end]
+        return word, col-start  # word, position cursor in word
 
-        return (text, fn, y0, x0)
+    def set_autoit_path(self):
+        """set path to AutoIt directory"""
+        d = Au3Parser.autoitpath if os.path.isdir(Au3Parser.autoitpath) else ct.app_path(ct.APP_DIR_EXE)
+        path = ct.dlg_dir(d)
+        if self.check_autoit_path(path):
+            Au3Parser.autoitpath = path
+            self.settings['autoit_dir'] = path
+            with open(self.filesettings, mode='w', encoding='utf-8') as fs:
+                json.dump(self.settings, fs, indent=4)
+            msg('AutoIt path set: {}'.format(path))
 
-
-    def show_config(self):
-        '''
-        open config file in editor
-        '''
-        with open(self.options_filename, mode="w", encoding='utf8') as fout:
-            json.dump(self.options, fout, indent=4)
-        file_open(self.options_filename)
-
-
-    def check_autoit_dir(self):
-        '''
-        check if AutoIt dir is exists
-        '''
-        if self.found_autoitdir:
-            return
-
-        if not os.path.isdir(self.options['autoit_dir']):
-            self.show_config()
-            msg_box('Please correct the AutoIt directory and restart CudaText.', MB_ICONERROR + MB_OK)
+    def check_autoit_path(self, path):
+        """check if AutoIt dir is exists"""
+        if os.path.isdir(os.path.join(path, 'Include')):
+            return True
         else:
-            self.found_autoitdir = True
+            msg('Please set correct the AutoIt directory.', 1)
+            return False
+
+    def on_key(self, ed_self, code, state):
+        """insert args for function under cursor"""
+        if 'AutoIt' not in ct.ed.get_prop(ct.PROP_LEXER_FILE):
+            return
+        if code != 9:  # tab-key=9
+            return
+        if state != '':
+            return
+        if ed_self.get_prop(ct.PROP_TAB_COLLECT_MARKERS):
+            return
+        cursor = self.get_cursor()
+        if not cursor:
+            return
+        row, col = cursor
+
+        w = self.get_word_under_cursor(*cursor, seps=')\n\r\t')
+        if not w:
+            return
+        word = w[0]
+        brackets = False
+        if word[-1:] == '(':
+            brackets = True
+            word = word.strip(' (')
+
+        for f in self.functions:
+            if f[1].lower() == word.lower():
+                params = f[2].split(',')
+                i = min(f[2].count(',', 0, f[2].find('[')),
+                        f[2].count(',', 0, f[2].find('='))-1)
+
+                args = []
+                for p in params:
+                    args.append(p.strip('[ ]'))
+                s = ', '.join(args)
+                ls = len(s)
+
+                # insert args
+                if brackets:
+                    ct.ed.insert(col, row, s)
+                else:
+                    ct.ed.insert(col, row, ''.join(['(', s, ')']))
+
+                # generate tab stops
+                marks = []
+                x0 = col if brackets else col + 1
+                for n, arg in enumerate(args):
+                    larg = len(arg)
+                    x1 = x0+larg
+                    marks.append([x0, row, 0, larg])
+                    z = col + ls - x1 + (0 if brackets else 1)
+                    if n >= i and z != 0:
+                        marks.append([x1, row, 0, col+1+ls - x1, 0])
+                    x0 = x1 + 2
+                marks.reverse()
+                for m in marks:
+                    ct.ed.markers(ct.MARKERS_ADD, *m)
+                ct.ed.set_prop(ct.PROP_TAB_COLLECT_MARKERS, '1')
+                ct.ed.cmd(ct_cmd.cmd_Markers_GotoLastAndDelete)
+                return False
+
+    def show_docstring(self):
+        cursor = self.get_cursor()
+        if not cursor:
+            return
+        w = self.get_word_under_cursor(*cursor)
+        if not w:
+            return
+        word = w[0].lower()
+        with open(self.api_file, encoding='utf-8') as f:
+            for line in f:
+                if line.lower().find(word) == 0:
+                    if '/a>' in line:
+                        start = line.find('<a')
+                        end = line.find('/a>') + 3
+                        line = line[:start] + line[end:]
+                    ct.app_log(ct.LOG_CLEAR, '', panel=ct.LOG_PANEL_OUTPUT)
+                    ct.app_log(ct.LOG_ADD, line, panel=ct.LOG_PANEL_OUTPUT)
+                    ct.ed.cmd(ct_cmd.cmd_ShowPanelOutput)
+                    ct.ed.focus()
+                    return True
+        ct.msg_status('Cannot find doc-string')

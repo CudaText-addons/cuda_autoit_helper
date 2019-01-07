@@ -1,3 +1,14 @@
+﻿2019.01
+* change AutoIt.acp to au3.api file
+* rework parser for *.au3 files and for au3.api file.
+* implemented a variable's scope in autocomplete list.
+* fix: double constants in autocomplete and rename id to 'const'.
+* fix: when opened more then one *.au3 file in autocompete were functions/const/vars from all *.au3 files.
+* command 'Go to definition' works faster
++ add command 'Show docstring'
++ add insert agrs for funtions
++ add command menu for setting autoit dir.
++ fix now don't need restart text editor after change autoit dir.
 
 2018.02.02
 - deleted lexer check, is in install.inf

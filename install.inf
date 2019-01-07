@@ -1,17 +1,27 @@
 [info]
 title=AutoIt Helper
-desc=Intelligence commands for AutoIt lexer: auto-completion, go to definition, function hints
+desc=Autocompletion and function hints for AutoIt Lexer
 type=cudatext-plugin
 subdir=cuda_autoit_helper
-homepage=https://github.com/TomBraider42/cuda_autoit_helper
+homepage=
 
 [item1]
 section=events
-events=on_open,on_change_slow,on_save,on_func_hint,on_complete,on_goto_def
+events=on_func_hint,on_complete,on_goto_def
 lexers=AutoIt
 
 [item2]
+section=events
+events=on_key
+keys=9
+
+[item3]
 section=commands
-caption=AutoIt Helper\Config
-method=show_config
+caption=AutoIt Helper\Set AutoIt path
+method=set_autoit_path
 menu=o
+
+[item4]
+section=commands
+caption=AutoIt Helper\Show docstring
+method=show_docstring
