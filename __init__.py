@@ -8,11 +8,11 @@ from .autoitparser import ApiParser, Au3Parser
 
 def msg(s, level=0):
     if level == 0:
-        print('cuda_autoit_intel:', s)
+        print('cuda_autoit_helper:', s)
     elif level == 1:
-        print('cuda_autoit_intel WARNING:', s)
+        print('cuda_autoit_helper WARNING:', s)
     elif level == 2:
-        print('cuda_autoit_intel ERROR:', s)
+        print('cuda_autoit_helper ERROR:', s)
 
 
 class Command:
