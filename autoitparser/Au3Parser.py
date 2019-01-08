@@ -11,7 +11,7 @@ regincs = re.compile(r'#include\s*(<|")(.*?)[>|"]', re.I)
 class Au3Parser:
     """Parser for opened au3 file"""
     __slots__ = ['_file', '_keywords', '_functions', '_ikeywords', '_ifunctions', '_times', '_defs']
-    autoitpath = None
+    autoitpath = ''
 
     def __init__(self):
         self._keywords = []

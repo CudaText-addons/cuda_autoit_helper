@@ -20,9 +20,13 @@ class Command:
                                 'cuda_autoit_helper.json')
 
     def __init__(self):
-        with open(self.filesettings) as fs:
-            self.settings = json.load(fs)
-        Au3Parser.autoitpath = self.settings.get('autoit_dir')
+        self.settings = {}
+        if os.path.isfile(self.filesettings):
+            with open(self.filesettings) as fs:
+                self.settings = json.load(fs)
+            Au3Parser.autoitpath = self.settings.get('autoit_dir')
+        else:
+            msg('For full functionality - set the AutoIt directory.', 1)
 
         self.api_file = os.path.join(os.path.dirname(__file__), 'au3.api')
         self.api = ApiParser(self.api_file)
