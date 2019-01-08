@@ -50,6 +50,8 @@ class Command:
         if not cursor:
             return
         word, _ = self.get_word_under_cursor(*cursor)
+        if not word:
+            return
         df = self.definitions.get(word.lower())  # [file, line_number] and None
         if df:
             self.goto_file(*df)
@@ -89,10 +91,9 @@ class Command:
         cursor = self.get_cursor()
         if not cursor:
             return
-        src = self.get_word_under_cursor(*cursor)
-        if not src:
+        word, pos = self.get_word_under_cursor(*cursor)
+        if not word:
             return
-        word, pos = src
         source = word[:pos].lower()
 
         # create autocomplete list
@@ -129,7 +130,7 @@ class Command:
         """get current word under cursor position"""
         line = ct.ed.get_text_line(row)
         if not 0 <= col <= len(line):
-            return
+            return '', 0
         for sep in seps:
             if sep in line:
                 line = line.replace(sep, ' ')
@@ -173,10 +174,9 @@ class Command:
             return
         row, col = cursor
 
-        w = self.get_word_under_cursor(*cursor, seps=')\n\r\t')
-        if not w:
+        word, _ = self.get_word_under_cursor(*cursor, seps=')\n\r\t')
+        if not word:
             return
-        word = w[0]
         brackets = False
         if word[-1:] == '(':
             brackets = True
@@ -222,13 +222,12 @@ class Command:
         cursor = self.get_cursor()
         if not cursor:
             return
-        w = self.get_word_under_cursor(*cursor)
-        if not w:
+        word, _ = self.get_word_under_cursor(*cursor)
+        if not word:
             return
-        word = w[0].lower()
         with open(self.api_file, encoding='utf-8') as f:
             for line in f:
-                if line.lower().find(word) == 0:
+                if line.lower().find(word.lower()) == 0:
                     if '/a>' in line:
                         start = line.find('<a')
                         end = line.find('/a>') + 3
