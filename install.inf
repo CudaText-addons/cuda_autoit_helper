@@ -3,7 +3,7 @@ title=AutoIt Helper
 desc=Autocompletion and function hints for AutoIt Lexer
 type=cudatext-plugin
 subdir=cuda_autoit_helper
-homepage=
+homepage=https://github.com/OlehL/cuda_autoit_helper
 
 [item1]
 section=events
@@ -14,6 +14,7 @@ lexers=AutoIt
 section=events
 events=on_key
 keys=9
+lexers=AutoIt
 
 [item3]
 section=commands
