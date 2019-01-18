@@ -1,3 +1,7 @@
+2019.01.18
+- fix: init plugin after press tab key
+- fix: homepage address
+
 2019.01.08
 + changed file AutoIt.acp to au3.api; reworked parser for .au3 files and for au3.api file
 + implemented a variable's scope in autocomplete list
