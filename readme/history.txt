@@ -1,3 +1,6 @@
+2019.01.28
+- fix: error when open file and call command 'Show doc-string'
+
 2019.01.18
 - fix: init plugin after press tab key
 - fix: homepage address

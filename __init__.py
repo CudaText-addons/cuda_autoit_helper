@@ -46,6 +46,7 @@ class Command:
 
     def on_goto_def(self, ed_self):
         """go to definition call"""
+        self.parser(ed_self)
         cursor = self.get_cursor()
         if not cursor:
             return
@@ -70,6 +71,7 @@ class Command:
 
     def on_func_hint(self, ed_self):
         """show hint call"""
+        self.parser(ed_self)
         cursor = self.get_cursor()
         if not cursor:
             return
