@@ -68,6 +68,7 @@ class Command:
         ct.ed.set_prop(ct.PROP_LINE_TOP, str(max(0, row - 5)))  # 5 = Offset
         ct.ed.set_caret(col, row - 1)
         ct.msg_status('Goto "%s", Line %d' % (filename, row))
+        return True
 
     def on_func_hint(self, ed_self):
         """show hint call"""
@@ -204,14 +205,16 @@ class Command:
 
                 # generate tab stops
                 marks = []
-                x0 = col if brackets else col + 1
+                k = int(not brackets)
+                x0 = col + k
+                # x0 = col if brackets else col + 1
                 for n, arg in enumerate(args):
                     larg = len(arg)
                     x1 = x0+larg
                     marks.append([x0, row, 0, larg])
-                    z = col + ls - x1 + (0 if brackets else 1)
+                    z = col + ls - x1 + k
                     if n >= i and z != 0:
-                        marks.append([x1, row, 0, col+1+ls - x1, 0])
+                        marks.append([x1, row, 0, col+ls-x1+k, 0])
                     x0 = x1 + 2
                 marks.reverse()
                 for m in marks:

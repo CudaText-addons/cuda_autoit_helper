@@ -7,7 +7,7 @@ homepage=https://github.com/OlehL/cuda_autoit_helper
 
 [item1]
 section=events
-events=on_func_hint,on_complete,on_goto_def
+events=on_goto_def,on_func_hint,on_complete
 lexers=AutoIt
 
 [item2]
