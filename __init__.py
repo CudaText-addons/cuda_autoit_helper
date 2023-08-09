@@ -79,7 +79,7 @@ class Command:
         row, col = cursor
 
         line = ct.ed.get_text_line(row).lower()
-        end = line.rfind('(', 0, row+1)
+        end = line.rfind('(', 0, col+1)
         start = line.rfind(' ', 0, end)+1
         s = line[start:end].strip('( )')
 
