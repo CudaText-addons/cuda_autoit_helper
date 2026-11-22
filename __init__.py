@@ -34,7 +34,7 @@ class Command:
         self.definitions = {}
 
     def parser(self, ed_self):
-        file = ed_self.get_filename()
+        file = ed_self.get_prop(ct.PROR_FN, '')
         current = self.parsers.setdefault(file, Au3Parser())
         text = re.split('\r|\n', ed_self.get_text_all())
         row = ct.ed.get_carets()[0][1]
